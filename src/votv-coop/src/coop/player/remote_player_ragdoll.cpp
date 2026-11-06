@@ -2,6 +2,7 @@
 
 #include "coop/player/remote_player_ragdoll.h"
 
+#include "coop/player/local_body.h"
 #include "coop/player/skin_effects.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/log.h"
@@ -105,6 +106,16 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     }
     body_ = body;
     bodyIdx_ = R::InternalIndexOf(body);
+
+    // A custom skin falls as itself: the flop body is dressed in the puppet's skin mesh and
+    // materials (physics and the pelvis stream unchanged). The stock kel keeps the plushie, which is
+    // its own body. Before the attach, which reads the pelvis off the (possibly new) mesh.
+    if (void* skinComp = ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetActor)) {
+        void* skinMesh = ue_wrap::puppet::GetComponentSkeletalMeshAsset(skinComp);
+        void* nativeMesh = coop::local_body::NativeBodyMesh();
+        if (skinMesh && nativeMesh && skinMesh != nativeMesh)
+            E::ReskinRagdollBody(body, skinMesh, skinComp);
+    }
 
     // PELVIS-attach the puppet actor to the body: the position anchor (nameplate +
     // recover hand-off follow the flop). The puppet itself goes INVISIBLE next -- the
