@@ -5,6 +5,7 @@
 
 #include "harness/harness.h"
 #include "harness/browser_click_arm.h"
+#include "harness/steam_join_watch.h"
 
 #include "harness/pump.h"
 #include "harness/session_runtime.h"
@@ -189,6 +190,9 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     // The test variables that do what a click in the multiplayer menu does fire here, once what a click
     // finds ready is: the master list, the nickname seed and the identity above.
     browser_click_arm::FireFromEnv();
+    // A join the Steam lobby bridge asks for (a friend accepted a Steam invite), the same Direct
+    // connect, ready from here for the same reason.
+    steam_join_watch::Start();
 
     // [dev] two processes of one install keep separate logs (log_drill=1): files only, on every boot path.
     coop::dev::log_drill::RunOnce();
