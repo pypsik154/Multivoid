@@ -32,6 +32,15 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
 // A ragdoll actor's simulating SkeletalMesh; null if dead. Game thread.
 void* GetRagdollBodyMesh(void* ragdollActor);
 
+// Dress a freshly spawned flop `body` in a player's custom skin, so the skin itself falls instead
+// of the stock plushie: the body's mesh takes `skinMesh` and the materials of `skinComponent` (the
+// puppet's visible skinned component). The skin's own physics asset is used when it has one (every
+// bone simulates); otherwise the plushie's is kept as an override, and the bones both skeletons
+// share (pelvis, chest, head) simulate while the rest ride them. If the dressed mesh has no pelvis
+// the body is put back as it was. Call before AttachActorToRagdollBody. True when dressed.
+// Game thread.
+bool ReskinRagdollBody(void* body, void* skinMesh, void* skinComponent);
+
 // The local player's native ragdoll mesh; the owning field is non-null exactly while ragdolling.
 // Game thread.
 void* GetLocalRagdollBodyMesh(void* mainPlayer);
