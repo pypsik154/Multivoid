@@ -52,7 +52,8 @@ std::string CleanAddress(const std::string& raw) {
 }
 
 // The dedicated-host console (VotVMP\votv-server.js) asks for a world save: the game's own manual
-// save, mainGamemode_C::autosave() (save() when the build has no autosave), on the game thread.
+// save, mainGamemode_C::save() (autosave() only when the build has no save(): autosave is the
+// purchasable upgrade's timer and writes nothing without it), on the game thread.
 // The game itself may decline it (it refuses to save during an event); the console watches the
 // slot's file to tell the operator whether it was written.
 void SaveWorld() {
@@ -61,9 +62,9 @@ void SaveWorld() {
         void* gm = ue_wrap::world_singleton::Gamemode();
         if (!gm) { UE_LOGW("server_cmd: save -- no gamemode (no world loaded)"); return; }
         void* cls = R::ClassOf(gm);
-        void* fn = cls ? R::FindFunction(cls, L"autosave") : nullptr;
-        const wchar_t* which = L"autosave";
-        if (!fn && cls) { fn = R::FindFunction(cls, L"save"); which = L"save"; }
+        void* fn = cls ? R::FindFunction(cls, L"save") : nullptr;
+        const wchar_t* which = L"save";
+        if (!fn && cls) { fn = R::FindFunction(cls, L"autosave"); which = L"autosave"; }
         if (!fn) { UE_LOGW("server_cmd: save -- the gamemode has no autosave()/save()"); return; }
         ue_wrap::ParamFrame f(fn);
         const bool ok = f.valid() && ue_wrap::Call(gm, f);
