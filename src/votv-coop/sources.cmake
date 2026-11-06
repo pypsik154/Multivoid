@@ -571,6 +571,7 @@ set(VOTVCOOP_SOURCES
     src/harness/world_boot.cpp
     src/harness/harness_diag.cpp
     src/harness/browser_click_arm.cpp
+    src/harness/steam_join_watch.cpp
     src/harness/autotest/autotest_grab.cpp
     src/harness/autotest/autotest_grabintent.cpp
     src/harness/autotest/autotest_hostthrow.cpp
