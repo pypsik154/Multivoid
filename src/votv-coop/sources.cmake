@@ -483,6 +483,7 @@ set(VOTVCOOP_SOURCES
     src/ui/server_settings_pane.cpp
     src/ui/world_rules_panel.cpp
     src/ui/scoreboard.cpp
+    src/ui/pause_player_list.cpp
     src/ui/link_format.cpp
     src/ui/server_browser.cpp
     src/ui/native_screen.cpp
