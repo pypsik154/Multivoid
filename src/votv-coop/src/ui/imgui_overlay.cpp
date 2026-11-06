@@ -16,6 +16,7 @@
 
 #include "ui/dev_menu.h"
 #include "ui/scoreboard.h"
+#include "ui/pause_player_list.h"
 #include "ui/server_browser.h"
 #include "ui/boot_warning_dialog.h"
 #include "ui/game_build_dialog.h"
@@ -211,6 +212,9 @@ void RenderFrameGuarded(const overlay_backend::FrameTarget& t) {
         // The network-stats overlay (F1 > Network > Stats, off by default): passive, suppressed
         // under the pause menu, independent of hud::IsActive() (a solo host sees it too).
         if (ui::net_stats_panel::Enabled() && !PauseMenuOpen()) ui::net_stats_panel::Render();
+        // The session's players beside the native pause menu: passive (no inputs), so the menu
+        // under it keeps its clicks; the tilde scoreboard stays the interactive list.
+        if (PauseMenuOpen() && !ScoreOpen()) ui::pause_player_list::Render();
 
         if (MenuOpen())    ui::dev_menu::Render();
         if (ScoreOpen())   ui::scoreboard::Render();
@@ -319,7 +323,7 @@ void OverlayFrame(const overlay_backend::FrameTarget& t) {
     // fading (it must keep drawing for its 0.4 s fade after the loading panel drops). The curtain
     // is in the render gate only, not AnyOpen, which also gates input and the cursor.
     if (g_imguiReady.load(std::memory_order_acquire) &&
-        (AnyOpen() || ui::hud::IsActive() || coop::join_curtain::IsActive())) {
+        (AnyOpen() || ui::hud::IsActive() || coop::join_curtain::IsActive() || PauseMenuOpen())) {
         overlay_backend::EnsureTarget(t);  // recreate the render target after a resize
         RenderFrameGuarded(t);
     }
