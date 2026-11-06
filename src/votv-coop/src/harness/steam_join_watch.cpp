@@ -4,8 +4,12 @@
 
 #include "coop/player/roster.h"
 #include "coop/session/session_manager.h"
+#include "ue_wrap/core/call.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/paths.h"
+#include "ue_wrap/core/reflection.h"
+#include "ue_wrap/world/world_singleton.h"
 
 #include <windows.h>
 
@@ -47,9 +51,41 @@ std::string CleanAddress(const std::string& raw) {
     return out;
 }
 
+// The dedicated-host console (VotVMP\votv-server.js) asks for a world save: the game's own manual
+// save, mainGamemode_C::autosave() (save() when the build has no autosave), on the game thread.
+// The game itself may decline it (it refuses to save during an event); the console watches the
+// slot's file to tell the operator whether it was written.
+void SaveWorld() {
+    ue_wrap::game_thread::Post([] {
+        namespace R = ue_wrap::reflection;
+        void* gm = ue_wrap::world_singleton::Gamemode();
+        if (!gm) { UE_LOGW("server_cmd: save -- no gamemode (no world loaded)"); return; }
+        void* cls = R::ClassOf(gm);
+        void* fn = cls ? R::FindFunction(cls, L"autosave") : nullptr;
+        const wchar_t* which = L"autosave";
+        if (!fn && cls) { fn = R::FindFunction(cls, L"save"); which = L"save"; }
+        if (!fn) { UE_LOGW("server_cmd: save -- the gamemode has no autosave()/save()"); return; }
+        ue_wrap::ParamFrame f(fn);
+        const bool ok = f.valid() && ue_wrap::Call(gm, f);
+        UE_LOGI("server_cmd: save -- mainGamemode_C::%ls() %s", which, ok ? "called" : "did not dispatch");
+    });
+}
+
+void PollServerCommand(const std::wstring& path) {
+    if (::GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    std::string cmd = ReadSmall(path);
+    ::DeleteFileW(path.c_str());
+    while (!cmd.empty() && (cmd.back() == '\r' || cmd.back() == '\n' || cmd.back() == ' ')) cmd.pop_back();
+    if (cmd == "save") SaveWorld();
+    else UE_LOGW("server_cmd: unknown command in multivoid_server_cmd.txt -- ignored");
+}
+
 void Loop(std::wstring path) {
+    const std::wstring cmdPath = path.substr(0, path.find_last_of(L'\\')) + L"\\multivoid_server_cmd.txt";
+    ::DeleteFileW(cmdPath.c_str());
     for (;;) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        PollServerCommand(cmdPath);
         if (::GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) continue;
         const std::string addr = CleanAddress(ReadSmall(path));
         ::DeleteFileW(path.c_str());
