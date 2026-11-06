@@ -16,6 +16,8 @@
 
 #include "ue_wrap/engine/engine.h"
 
+#include "ue_wrap/actors/puppet.h"  // GetComponentSkeletalMeshAsset, for the re-skin's undo
+
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -277,6 +279,93 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
       f.Set<bool>(L"bAddToCurrent", false);
       f.SetRaw(L"BoneName", g_pelvisFName, sizeof(g_pelvisFName));
       Call(mesh, f); }
+}
+
+namespace {
+
+// The UFunctions the re-skin needs, resolved once (null while unresolved; the re-skin then declines).
+void* g_getMaterialFn     = nullptr;  // UPrimitiveComponent::GetMaterial(ElementIndex)
+void* g_getNumMaterialsFn = nullptr;  // UPrimitiveComponent::GetNumMaterials()
+void* g_getPhysAssetFn    = nullptr;  // USkinnedMeshComponent::GetPhysicsAsset()
+void* g_setPhysAssetFn    = nullptr;  // USkinnedMeshComponent::SetPhysicsAsset(NewPhysicsAsset, bForceReInit)
+
+bool ResolveReskinFns() {
+    if (!g_getMaterialFn || !g_getNumMaterialsFn) {
+        if (void* c = R::FindClass(L"PrimitiveComponent")) {
+            if (!g_getMaterialFn) g_getMaterialFn = R::FindFunction(c, L"GetMaterial");
+            if (!g_getNumMaterialsFn) g_getNumMaterialsFn = R::FindFunction(c, L"GetNumMaterials");
+        }
+    }
+    if (!g_getPhysAssetFn || !g_setPhysAssetFn) {
+        if (void* c = R::FindClass(L"SkinnedMeshComponent")) {
+            if (!g_getPhysAssetFn) g_getPhysAssetFn = R::FindFunction(c, L"GetPhysicsAsset");
+            if (!g_setPhysAssetFn) g_setPhysAssetFn = R::FindFunction(c, L"SetPhysicsAsset");
+        }
+    }
+    return g_getMaterialFn && g_getNumMaterialsFn && g_getPhysAssetFn && g_setPhysAssetFn;
+}
+
+void* GetPhysAsset(void* comp) {
+    ParamFrame f(g_getPhysAssetFn);
+    if (!f.valid() || !Call(comp, f)) return nullptr;
+    return f.Get<void*>(L"ReturnValue");
+}
+
+void SetPhysAsset(void* comp, void* asset) {
+    ParamFrame f(g_setPhysAssetFn);
+    if (!f.valid()) return;
+    f.Set<void*>(L"NewPhysicsAsset", asset);
+    f.Set<bool>(L"bForceReInit", true);
+    Call(comp, f);
+}
+
+}  // namespace
+
+bool ReskinRagdollBody(void* body, void* skinMesh, void* skinComponent) {
+    void* mesh = RagdollMeshOf(body);
+    if (!mesh || !skinMesh || !R::IsLive(skinMesh) || !skinComponent || !R::IsLive(skinComponent)) return false;
+    if (!ResolveReskinFns()) {
+        UE_LOGW("ragdoll_body: re-skin functions unresolved -- the plushie stays");
+        return false;
+    }
+    void* const origMesh = ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh);
+    if (!origMesh || origMesh == skinMesh) return false;
+    void* const origPhys = GetPhysAsset(mesh);
+
+    // The skin's materials, as the puppet wears them (slot 0 carries the skin's 'tex' MID).
+    constexpr int32_t kMaxSlots = 8;
+    void* mats[kMaxSlots] = {};
+    int32_t nMats = 0;
+    { ParamFrame f(g_getNumMaterialsFn);
+      if (f.valid() && Call(skinComponent, f)) nMats = f.Get<int32_t>(L"ReturnValue"); }
+    if (nMats > kMaxSlots) nMats = kMaxSlots;
+    for (int32_t i = 0; i < nMats; ++i) {
+        ParamFrame f(g_getMaterialFn);
+        f.Set<int32_t>(L"ElementIndex", i);
+        if (f.valid() && Call(skinComponent, f)) mats[i] = f.Get<void*>(L"ReturnValue");
+    }
+
+    if (!SetSkeletalMesh(mesh, skinMesh)) return false;
+    // The skin's own physics asset when it has one; otherwise keep the plushie's as the override.
+    void* phys = GetPhysAsset(mesh);
+    const bool ownPhysics = phys != nullptr && phys != origPhys;
+    if (!phys && origPhys) SetPhysAsset(mesh, origPhys);
+
+    uint8_t pelvis[8] = {};
+    if (!FindBoneFName(mesh, L"pelvis", pelvis)) {
+        // Not a body the stream can drive: put the plushie back exactly as it was.
+        SetSkeletalMesh(mesh, origMesh);
+        if (origPhys) SetPhysAsset(mesh, origPhys);
+        StartBodySim(mesh);
+        UE_LOGW("ragdoll_body: the skin mesh has no pelvis bone -- the plushie stays");
+        return false;
+    }
+    for (int32_t i = 0; i < nMats; ++i)
+        if (mats[i]) SetComponentMaterial(mesh, i, mats[i]);
+    StartBodySim(mesh);
+    UE_LOGI("ragdoll_body: flop body %p dressed in the player's skin (%s physics, %d material slot(s))", body,
+            ownPhysics ? "the skin's own" : "the plushie's shared-bone", static_cast<int>(nMats));
+    return true;
 }
 
 }  // namespace ue_wrap::engine
